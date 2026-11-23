@@ -1,0 +1,6 @@
+<aiml version="1.0.1">
+  <category><pattern>HELLO</pattern><template>Hello. Micronaut is ready.</template></category>
+  <category><pattern>HI</pattern><template><srai>HELLO</srai></template></category>
+  <category><pattern>WHAT IS *</pattern><template>You asked about <star/>.</template></category>
+  <category><pattern>SUM DEMO</pattern><template>Proposing data sum.<task type="data_processor">{"data":[1,2,3],"operation":"sum"}</task></template></category>
+</aiml>

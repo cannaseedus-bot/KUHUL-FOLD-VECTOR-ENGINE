@@ -92,6 +92,3 @@ The integration is complete only when:
 5. A complete inference request produces verified evidence and a valid META_FOLD chain.
 6. The UI advances its verified tick only after the host confirms the proof.
 
-**Current status:** The architecture is mapped and the supplied components are identified, but the merged runtime has not been built or tested. The original golden input fixture and the complete local runtime repository are still needed for that verification.
-
-I would freeze the FEL v1.1 laws you just supplied as the integration authority, retain v1 as a compatibility path, and make every existing module conform to that boundary. That is the shortest path from the collection of near-complete components to one functioning K'UHUL semantic fold runtime.

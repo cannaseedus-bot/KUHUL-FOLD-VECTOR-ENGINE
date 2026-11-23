@@ -1,17 +1,9 @@
 <IMG SRC="Neon Cosmic Semantic Emblem.png" WIDTH="250PX"/>
 # **K'UHUL / FEL v1.1 — Unified Runtime**
 
-**This is the convergence point.** The FEL v1.1 contract supplies the canonical language and legality rules, while the earlier files supply the state replay, attestation, SCX2 encoding, GGL inference adapter, worker orchestration, and Micronaut control interface.
+## The FEL v1.1 contract supplies the canonical language and legality rules, while the earlier files supply the state replay, attestation, SCX2 encoding, GGL inference adapter, worker orchestration, and ## Micronaut control interface.
 
-The new attachment also confirms that the CSS Micronaut Control System already declares six agents, their permitted operations, chaining relationships, and a WebSocket interface for submitting FEL v1.1 intents.
-
-Pasted text(20261123-061205).txt
-
-Pasted text(20261123-061205).txt
-
-
-
-The goal is to connect those existing pieces, not replace them with another framework.
+## The goal is to connect those existing pieces, not replace them with another framework.
 
 ## **The unified execution path**
 

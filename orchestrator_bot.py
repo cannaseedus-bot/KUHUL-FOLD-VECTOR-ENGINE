@@ -6,6 +6,9 @@ This is an example controller for fold orchestrators and Micronauts.
 from __future__ import annotations
 
 import json
+import re
+import uuid
+import xml.etree.ElementTree as ET
 import logging
 import queue
 import subprocess
@@ -22,6 +25,90 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger("Orchestrator")
+
+
+class AIMLMicronaut:
+    """Read-only AIML 1.x subset. No independent compiler or code evaluation."""
+
+    def __init__(self, aiml_dir: Optional[str] = None, max_depth: int = 3):
+        self.max_depth = max_depth
+        self.rules = []
+        if aiml_dir:
+            self.load(aiml_dir)
+
+    def load(self, directory: str) -> int:
+        root = Path(directory).resolve()
+        if not root.is_dir():
+            raise FileNotFoundError(f"AIML directory not found: {root}")
+        rules = []
+        for path in sorted(root.rglob("*.aiml")):
+            # ElementTree does not fetch external DTD entities.
+            tree = ET.parse(path)
+            for cat in tree.findall(".//category"):
+                pattern, template = cat.find("pattern"), cat.find("template")
+                if pattern is None or template is None:
+                    continue
+                raw = " ".join("".join(pattern.itertext()).upper().split())
+                if not raw:
+                    continue
+                parts = re.split(r"([*_])", raw)
+                expr = "^" + "".join(
+                    r"(.+?)" if x == "*" else r"(.*?)" if x == "_"
+                    else re.escape(x).replace(r"\ ", r"\s+")
+                    for x in parts
+                ) + "$"
+                rules.append((raw, re.compile(expr), template, str(path)))
+        # Specific patterns before wildcards, deterministic file order on ties.
+        rules.sort(key=lambda r: (r[0].count("*") + r[0].count("_"), -len(r[0])))
+        self.rules = rules
+        return len(rules)
+
+    def _render(self, element, stars, depth, visited):
+        chunks = [element.text or ""]
+        proposal = None
+        for child in element:
+            tag = child.tag.rsplit("}", 1)[-1].lower()
+            if tag == "star":
+                try:
+                    index = int(child.get("index", "1")) - 1
+                    chunks.append(stars[index] if index >= 0 else "")
+                except (ValueError, IndexError):
+                    chunks.append("")
+            elif tag == "srai":
+                target, _ = self._render(child, stars, depth, visited)
+                sub = self.respond(target, depth + 1, visited)
+                chunks.append(sub["text"])
+                proposal = proposal or sub.get("proposal")
+            elif tag == "task":
+                # Data-only proposal. Task execution requires explicit host authorization.
+                task_type = child.get("type", "")
+                params_text, _ = self._render(child, stars, depth, visited)
+                try:
+                    params = json.loads(params_text or "{}")
+                    if isinstance(params, dict):
+                        proposal = {"task_type": task_type, "parameters": params}
+                except json.JSONDecodeError:
+                    pass
+            else:
+                # Unknown AIML constructs are plain text, never executable.
+                child_text, nested_proposal = self._render(child, stars, depth, visited)
+                chunks.append(child_text)
+                proposal = proposal or nested_proposal
+            chunks.append(child.tail or "")
+        return "".join(chunks), proposal
+
+    def respond(self, prompt: str, depth: int = 0, visited=None) -> Dict[str, Any]:
+        normalized = " ".join(str(prompt).upper().split())
+        visited = frozenset() if visited is None else visited
+        if depth > self.max_depth or normalized in visited:
+            return {"text": "", "matched": False, "fault": "E_SRAI_DEPTH_OR_CYCLE"}
+        for raw, regex, template, source in self.rules:
+            match = regex.fullmatch(normalized)
+            if match:
+                text, proposal = self._render(template, match.groups(), depth, visited | {normalized})
+                return {"text": " ".join(text.split()), "matched": True,
+                        "pattern": raw, "source": source, "proposal": proposal}
+        return {"text": "", "matched": False, "proposal": None}
 
 
 class TaskStatus(Enum):
@@ -45,7 +132,9 @@ class BotTask:
 
 
 class BotOrchestrator:
-    def __init__(self, max_workers: int = 3) -> None:
+    def __init__(self, max_workers: int = 3, aiml_dir: Optional[str] = None) -> None:
+        self.aiml = AIMLMicronaut(aiml_dir)
+        self.allowed_aiml_tasks = frozenset({"data_processor", "calculator", "file_processor", "monitor"})
         self.max_workers = max_workers
         self.tasks: Dict[str, BotTask] = {}
         self.active_workers: Dict[int, subprocess.Popen[str]] = {}
@@ -62,7 +151,7 @@ class BotOrchestrator:
 
     def create_task(self, task_type: str, parameters: Dict[str, Any]) -> str:
         """Create a new task and add it to the queue."""
-        task_id = f"task_{int(time.time())}_{len(self.tasks)}"
+        task_id = f"task_{uuid.uuid4().hex}"
         task = BotTask(
             id=task_id,
             task_type=task_type,
@@ -74,6 +163,20 @@ class BotOrchestrator:
         self.task_queue.put(task_id)
         logger.info("Created task %s of type %s", task_id, task_type)
         return task_id
+
+    def aiml_infer(self, prompt: str, dispatch: bool = False) -> Dict[str, Any]:
+        """Native AIML match; optional dispatch requires explicit caller opt-in."""
+        result = self.aiml.respond(prompt)
+        proposal = result.get("proposal")
+        result["dispatched"] = False
+        if dispatch and proposal:
+            task_type = proposal["task_type"]
+            if task_type not in self.allowed_aiml_tasks:
+                result["fault"] = "E_CAPABILITY_DENIED"
+            else:
+                result["task_id"] = self.create_task(task_type, proposal["parameters"])
+                result["dispatched"] = True
+        return result
 
     def _process_tasks(self) -> None:
         """Process tasks from the queue and spawn workers."""
@@ -184,7 +287,11 @@ class BotOrchestrator:
                 del self.active_workers[process.pid]
 
             if return_code == 0:
-                logger.info("Worker for task %s completed successfully", task_id)
+                task = self.tasks.get(task_id)
+                if task and task.status == TaskStatus.RUNNING:
+                    task.status = TaskStatus.FAILED
+                    task.error = "E_WORKER_NO_RESULT"
+                logger.info("Worker for task %s exited", task_id)
             else:
                 task = self.tasks.get(task_id)
                 if task and task.status == TaskStatus.RUNNING:
@@ -515,7 +622,7 @@ def demo() -> None:
 
     create_all_workers()
 
-    orchestrator = BotOrchestrator(max_workers=2)
+    orchestrator = BotOrchestrator(max_workers=2, aiml_dir=str(Path(__file__).resolve().parent / "compiled_aiml") if (Path(__file__).resolve().parent / "compiled_aiml").is_dir() else None)
 
     try:
         tasks = [

@@ -1,4 +1,4 @@
-<IMG SRC="Neon Cosmic Semantic Emblem.png" />
+<IMG SRC="Neon Cosmic Semantic Emblem.png" WIDTH="250PX"/>
 # **K'UHUL / FEL v1.1 — Unified Runtime**
 
 **This is the convergence point.** The FEL v1.1 contract supplies the canonical language and legality rules, while the earlier files supply the state replay, attestation, SCX2 encoding, GGL inference adapter, worker orchestration, and Micronaut control interface.

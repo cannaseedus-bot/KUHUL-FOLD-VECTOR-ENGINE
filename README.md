@@ -1,10 +1,6 @@
 <IMG SRC="Neon Cosmic Semantic Emblem.png" WIDTH="250PX"/>
 # **K'UHUL / FEL v1.1 — Unified Runtime**
 
-## The FEL v1.1 contract supplies the canonical language and legality rules, while the earlier files supply the state replay, attestation, SCX2 encoding, GGL inference adapter, worker orchestration, and ## Micronaut control interface.
-
-## The goal is to connect those existing pieces, not replace them with another framework.
-
 ## **The unified execution path**
 
 ```
